@@ -1,0 +1,9 @@
+# Recrie o venv nesta máquina: `python -m venv .venv`
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.cursor/

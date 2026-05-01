@@ -14,6 +14,20 @@ Trabalho da disciplina de Computação Gráfica (UNISC, Prof. Rafael Peiter). O 
 
 
 
+## Qualquer PC (Windows)
+
+Pasta `.venv` **não vale copiar entre computadores/usuários** (quebra com caminho tipo `...\Lufes\...\python.exe`). Para entregar/usar em outra máquina:
+
+1. Instale Python 3.11 ou mais novo de [python.org](https://www.python.org/downloads/), com **Add python.exe to PATH** (ou garanta que o comando `py` funcione).
+2. **Não** inclua `.venv` no zip do trabalho ou apague antes de distribuir (`setup` recria tudo).
+3. Na pasta do projeto: **`setup.bat`** (uma vez) ou `setup.ps1` no PowerShell; depois **`run.bat`** para jogar (`run.bat` chama setup se não houver `.venv`).
+4. Se `python` abrir a Microsoft Store: **Configurações → Apps → Aliases de execução** e desligue **`python.exe` / `python3.exe`**.
+5. **Linux/Mac** (rápido): `python3 -m venv .venv` → `./.venv/bin/pip install -r requirements.txt` → `./.venv/bin/python main.py`.
+
+---
+
+
+
 ---
 
 

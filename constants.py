@@ -39,8 +39,8 @@ GROUND_CHECKER_TEX_SIZE  = 64   # textura quadrada gerada em pixels (múltiplo d
 GROUND_CHECKER_TEX_CELLS = 8    # xadrez 8x8 dentro da textura (repete com GL_REPEAT)
 
 # Fases — thresholds em segundos
-PHASE_TIME_THRESHOLDS = [0, 35, 65, 106, 135] # thresholds das fases
-TOTAL_GAME_TIME       = 165   # 2:45 # tempo total do jogo
+PHASE_TIME_THRESHOLDS = [0, 35, 65, 106, 138] # thresholds das fases
+TOTAL_GAME_TIME       = 168   # 2:48 # tempo total do jogo
 
 PHASE_NAMES = [
     "Futurista",

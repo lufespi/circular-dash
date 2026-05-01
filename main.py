@@ -17,6 +17,7 @@ from game import GameState
 game = None
 last_time = 0.0
 
+
 def _script_dir():
     s = __file__.replace("\\", "/")
     return s.rsplit("/", 1)[0] if "/" in s else "."
@@ -40,7 +41,6 @@ _PROJECT_ROOT = _script_dir()
 
 
 def _resolved_music_path():
-    """Caminho utilizável do WAV no disco, ou None se estiver vazio/não encontrado."""
     if not BG_MUSIC_PATH.strip():
         return None
     rel = BG_MUSIC_PATH.strip()
@@ -56,7 +56,7 @@ def _resolved_music_path():
     return None
 
 
-def _start_bg_music():
+def start_bg_music():
     """Toca WAV em loop no Windows (`winsound`); ignorado se path vazio ou inválido."""
     if sys.platform != "win32":
         return
@@ -71,15 +71,13 @@ def _start_bg_music():
         return
     import winsound
 
-    # Para WAV válido PCM; WAV em formato estranho pode falhar em silêncio.
     winsound.PlaySound(
         wav_path,
         winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP,
     )
 
 
-def _stop_bg_music():
-    """Para som assíncrono iniciado por `winsound`."""
+def stop_bg_music():
     if sys.platform != "win32":
         return
     try:
@@ -119,7 +117,7 @@ def main():
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-    _start_bg_music()
+    start_bg_music()
 
     game      = GameState()
     last_time = time.time()
@@ -138,7 +136,7 @@ def main():
         glfw.swap_buffers(window)
         glfw.poll_events()
 
-    _stop_bg_music()
+    stop_bg_music()
     glfw.terminate()
 
 

@@ -9,6 +9,21 @@ from collision import circle_aabb_collision
 from constants import PLAYER_RADIUS
 
 
+def _entry_audio_module():
+    """Áudio definido na `main.py`. Com `python main.py` o runnable é `__main__`, não `main`.
+
+    Importar `main` aqui pode carregar ``main.py`` de novo (duplicação) ou ciclo de imports.
+    """
+    import sys
+
+    root = sys.modules.get("__main__")
+    if root is not None and callable(getattr(root, "start_bg_music", None)):
+        return root
+    import main as mod
+
+    return mod
+
+
 class GameState:
     """Coordena player, obstáculos, fases, HUD e renderer."""
 
@@ -38,6 +53,7 @@ class GameState:
         # Verifica vitória (completou todas as fases)
         if self.level.is_complete(self.elapsed):
             self.state = "victory"
+            _entry_audio_module().stop_bg_music()
             return
 
         speed    = self.level.scroll_speed
@@ -57,6 +73,7 @@ class GameState:
                 self.player.take_hit()
                 if self.player.lives <= 0:
                     self.state = "game_over"
+                    _entry_audio_module().stop_bg_music()
                 break
 
     # ------------------------------------------------------------------ #
@@ -92,3 +109,4 @@ class GameState:
         self.hud.reset()
         # Reinicia scroll visual
         self.renderer._bg_scroll = 0.0
+        _entry_audio_module().start_bg_music()

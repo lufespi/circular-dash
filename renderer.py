@@ -290,11 +290,65 @@ class Renderer:
     # ------------------------------------------------------------------ #
 
     def draw_obstacle(self, obstacle, phase: int):
-        """Renderiza obstáculo com preenchimento e borda."""
-        c = PHASE_COLORS[phase]["obstacle"]
-        x, y = obstacle.position
+        """Renderiza obstáculo: espinho (triângulo) ou bloco (quad com detalhes)."""
+        if obstacle.kind == 'spike':
+            self._draw_spike(obstacle, phase)
+        else:
+            self._draw_block(obstacle, phase)
+
+    def _draw_spike(self, obstacle, phase: int):
+        """Espinho triangular apontando para cima, com brilho na aresta."""
+        c  = PHASE_COLORS[phase]["obstacle"]
+        x, y = float(obstacle.position[0]), float(obstacle.position[1])
         w, h = obstacle.width, obstacle.height
 
+        # Corpo principal — triângulo preenchido
+        tip_x = x + w * 0.5
+        tip_y = y + h
+
+        # Sombra/corpo escuro primeiro
+        r, g, b = c
+        dark = (r * 0.55, g * 0.55, b * 0.55)
+        glColor3f(*dark)
+        glBegin(GL_TRIANGLES)
+        glVertex2f(x,       y)
+        glVertex2f(x + w,   y)
+        glVertex2f(tip_x,   tip_y)
+        glEnd()
+
+        # Face iluminada (lado esquerdo mais claro)
+        bright = (min(r * 1.5, 1.0), min(g * 1.5, 1.0), min(b * 1.5, 1.0))
+        glBegin(GL_TRIANGLES)
+        glColor3f(*c);      glVertex2f(x,       y)
+        glColor3f(*bright); glVertex2f(tip_x,   tip_y)
+        glColor3f(*c);      glVertex2f(x + w * 0.5, y)
+        glEnd()
+
+        # Contorno
+        glColor4f(0.0, 0.0, 0.0, 0.7)
+        glLineWidth(1.5)
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(x,       y)
+        glVertex2f(x + w,   y)
+        glVertex2f(tip_x,   tip_y)
+        glEnd()
+
+        # Linha de destaque na ponta
+        glColor4f(1.0, 1.0, 1.0, 0.55)
+        glLineWidth(1.0)
+        glBegin(GL_LINES)
+        glVertex2f(x,     y)
+        glVertex2f(tip_x, tip_y)
+        glEnd()
+
+    def _draw_block(self, obstacle, phase: int):
+        """Bloco sólido estilo Geometry Dash: face, detalhe e borda."""
+        c  = PHASE_COLORS[phase]["obstacle"]
+        x, y = float(obstacle.position[0]), float(obstacle.position[1])
+        w, h = obstacle.width, obstacle.height
+        r, g, b = c
+
+        # Face principal
         glColor3f(*c)
         glBegin(GL_QUADS)
         glVertex2f(x,     y)
@@ -303,8 +357,40 @@ class Renderer:
         glVertex2f(x,     y + h)
         glEnd()
 
-        # Borda escura
-        glColor4f(0, 0, 0, 0.5)
+        # Detalhe interno (quadrado menor) — imita os blocos do GD
+        m  = min(w, h) * 0.18   # margem interna
+        ir = min(r * 0.5, 1.0)
+        ig = min(g * 0.5, 1.0)
+        ib = min(b * 0.5, 1.0)
+        glColor4f(ir, ig, ib, 0.65)
+        glBegin(GL_QUADS)
+        glVertex2f(x + m,     y + m)
+        glVertex2f(x + w - m, y + m)
+        glVertex2f(x + w - m, y + h - m)
+        glVertex2f(x + m,     y + h - m)
+        glEnd()
+
+        # Highlight no canto superior-esquerdo (brilho 3D)
+        glColor4f(1.0, 1.0, 1.0, 0.30)
+        glLineWidth(2.0)
+        glBegin(GL_LINES)
+        glVertex2f(x + 0.004, y + h)
+        glVertex2f(x + 0.004, y)
+        glVertex2f(x,         y + h - 0.004)
+        glVertex2f(x + w,     y + h - 0.004)
+        glEnd()
+
+        # Sombra no canto inferior-direito
+        glColor4f(0.0, 0.0, 0.0, 0.35)
+        glBegin(GL_LINES)
+        glVertex2f(x + w - 0.004, y + h)
+        glVertex2f(x + w - 0.004, y)
+        glVertex2f(x,             y + 0.004)
+        glVertex2f(x + w,         y + 0.004)
+        glEnd()
+
+        # Contorno externo
+        glColor4f(0.0, 0.0, 0.0, 0.60)
         glLineWidth(1.5)
         glBegin(GL_LINE_LOOP)
         glVertex2f(x,     y)
@@ -336,6 +422,69 @@ class Renderer:
     #  Overlays                                                            #
     # ------------------------------------------------------------------ #
 
+    def draw_finish_line(self, x: float):
+        """Desenha uma linha de chegada festiva com bandeirola e poste."""
+        import numpy as np
+        from constants import GROUND_TOP_Y, GROUND_BOTTOM_Y
+
+        pole_w   = 0.012
+        pole_top = 0.75     # topo do poste em NDC Y
+        pole_bot = GROUND_TOP_Y
+
+        # --- Poste ---
+        glColor3f(0.85, 0.85, 0.85)
+        glBegin(GL_QUADS)
+        glVertex2f(x,          pole_bot)
+        glVertex2f(x + pole_w, pole_bot)
+        glVertex2f(x + pole_w, pole_top)
+        glVertex2f(x,          pole_top)
+        glEnd()
+
+        # --- Bandeirola (triângulo) no topo ---
+        flag_w = 0.14
+        flag_h = 0.09
+        glColor3f(1.0, 0.85, 0.0)   # amarelo ouro
+        glBegin(GL_TRIANGLES)
+        glVertex2f(x + pole_w,           pole_top)
+        glVertex2f(x + pole_w + flag_w,  pole_top - flag_h * 0.5)
+        glVertex2f(x + pole_w,           pole_top - flag_h)
+        glEnd()
+        # borda da bandeirola
+        glColor4f(0.6, 0.4, 0.0, 0.9)
+        glLineWidth(1.5)
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(x + pole_w,           pole_top)
+        glVertex2f(x + pole_w + flag_w,  pole_top - flag_h * 0.5)
+        glVertex2f(x + pole_w,           pole_top - flag_h)
+        glEnd()
+
+        # --- Faixa xadrez horizontal no nível do chão ---
+        stripe_h = 0.055
+        stripe_y = GROUND_TOP_Y - stripe_h
+        cols     = 10
+        col_w    = 0.035
+        for i in range(cols):
+            cx = x + i * col_w
+            if i % 2 == 0:
+                glColor4f(1.0, 1.0, 1.0, 0.95)
+            else:
+                glColor4f(0.05, 0.05, 0.05, 0.95)
+            glBegin(GL_QUADS)
+            glVertex2f(cx,         stripe_y)
+            glVertex2f(cx + col_w, stripe_y)
+            glVertex2f(cx + col_w, GROUND_TOP_Y)
+            glVertex2f(cx,         GROUND_TOP_Y)
+            glEnd()
+
+        # --- Texto "META" acima da bandeirola ---
+        # (usa linha branca simples como sinalização extra)
+        glColor4f(1.0, 1.0, 1.0, 0.55)
+        glLineWidth(2.5)
+        glBegin(GL_LINES)
+        glVertex2f(x + pole_w * 0.5, pole_bot)
+        glVertex2f(x + pole_w * 0.5, pole_top)
+        glEnd()
+
     def draw_overlay(self, r: float, g: float, b: float, a: float):
         """Retângulo semitransparente cobrindo a tela inteira."""
         glColor4f(r, g, b, a)
@@ -359,4 +508,3 @@ class Renderer:
             glVertex2f(cx + radius * float(np.cos(angle)),
                        cy + radius * float(np.sin(angle)))
         glEnd()
-

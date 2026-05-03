@@ -1,7 +1,9 @@
 """HUD do jogo: tempo, fase, vidas e mensagens de fim de partida."""
 
 from PIL import Image, ImageDraw, ImageFont
-from constants import MAX_LIVES, PHASE_NAMES, WINDOW_WIDTH, WINDOW_HEIGHT
+from constants import MAX_LIVES, PHASE_NAMES, WINDOW_WIDTH, WINDOW_HEIGHT, TOTAL_GAME_TIME
+import phase_progress
+from debug import DEBUG
 
 
 def _try_font(size: int):
@@ -41,11 +43,13 @@ class HUD:
         # Cache de texturas
         self._timer_tex  = 0
         self._phase_tex  = 0
+        self._debug_tex  = 0
         self._over_tex   = 0
         self._win_tex    = 0
 
         self._last_timer_str = ""
         self._last_phase     = -1
+        self._last_debug_on  = None
 
     # ------------------------------------------------------------------ #
 
@@ -75,8 +79,13 @@ class HUD:
 
     def render(self, elapsed: float, lives: int, phase: int, state: str):
         """Desenha todos os elementos visuais do HUD no frame atual."""
-        self._draw_timer(elapsed)
+        if DEBUG.get("show_timer_text", False):
+            self._draw_timer(elapsed)
+        elif DEBUG.get("show_phase_progress", True) and state not in ("game_over", "victory"):
+            phase_progress.render_progress(self._renderer, elapsed, TOTAL_GAME_TIME,
+                                           x_px=12, y_px=12)
         self._draw_phase(phase)
+        self._draw_debug_status()
         self._draw_lives(lives)
 
         if state == "game_over":
@@ -122,6 +131,24 @@ class HUD:
             w = self._ndc_w(self._pw)
             h = self._ndc_h(self._ph)
             self._renderer.draw_texture_quad(self._phase_tex, x, y, w, h)
+
+    def _draw_debug_status(self):
+        """Mostra um indicador quando o modo debug de vidas infinitas está ativo."""
+        debug_on = DEBUG.get("infinite_lives", False)
+        if debug_on != self._last_debug_on:
+            self._debug_tex = self._release(self._debug_tex)
+            if debug_on:
+                img = _text_to_pil("DEBUG = ON", self._font_small, color=(255, 210, 90, 230))
+                self._debug_tex = self._upload(img)
+                self._dw, self._dh = img.size
+            self._last_debug_on = debug_on
+
+        if self._debug_tex:
+            x = self._px_to_ndc_x(12)
+            y = self._px_to_ndc_y(12 + 34 + self._ph + 3 + self._dh)
+            w = self._ndc_w(self._dw)
+            h = self._ndc_h(self._dh)
+            self._renderer.draw_texture_quad(self._debug_tex, x, y, w, h)
 
     def _draw_lives(self, lives: int):
         """Desenha ícones de vida no canto superior direito."""
@@ -183,5 +210,8 @@ class HUD:
         """Limpa cache de HUD para reinício de partida."""
         self._last_timer_str = ""
         self._last_phase     = -1
+        self._last_debug_on  = None
         self._timer_tex = self._release(self._timer_tex)
         self._phase_tex = self._release(self._phase_tex)
+        self._debug_tex = self._release(self._debug_tex)
+        phase_progress.release(self._renderer)

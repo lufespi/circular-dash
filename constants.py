@@ -13,9 +13,9 @@ PLAYER_RADIUS        = 0.05 # tamanho do círculo
 PLAYER_X_NDC         = -0.6 # posição do círculo na tela eixo x
 PLAYER_GROUND_Y      = -0.64  # posição do círculo no chão eixo y
 PLAYER_SPRITE_HEIGHT_SCALE = 1.35 # Só o desenho do sprite: >1 deixa o personagem mais alto (colisão continua o círculo acima).
-PLAYER_JUMP_VELOCITY = 2 # velocidade do pulo
+PLAYER_JUMP_VELOCITY = 1.5 # velocidade do pulo
 GRAVITY              = -5.0 # aceleração da gravidade
-MAX_LIVES            = 30 # número de vidas
+MAX_LIVES            = 3 # número de vidas
 INVINCIBILITY_DURATION = 2.0 # tempo de invencibilidade
 
 # Obstáculos

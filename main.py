@@ -94,6 +94,10 @@ def key_callback(window, key, scancode, action, mods):
         game.on_jump()
     if key == glfw.KEY_R      and action == glfw.PRESS:
         game.on_restart()
+    if key == glfw.KEY_T      and action == glfw.PRESS:
+        import debug
+        debug.toggle("show_timer_text")   # alterna cronômetro MM:SS ↔ barra de progresso
+        debug.toggle("infinite_lives")
     if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
         glfw.set_window_should_close(window, True)
 

@@ -1,6 +1,7 @@
 """Lógica do personagem: física, pulo, vidas e invencibilidade."""
 
 import numpy as np
+import debug
 from constants import (
     PLAYER_X_NDC, PLAYER_GROUND_Y, PLAYER_JUMP_VELOCITY,
     GRAVITY, MAX_LIVES, INVINCIBILITY_DURATION,
@@ -71,6 +72,11 @@ class Player:
 
     def take_hit(self):
         if self.inv_timer > 0:
+            return
+        if debug.DEBUG.get("infinite_lives", False):
+            self.inv_timer   = INVINCIBILITY_DURATION
+            self.flash_timer = 0.1
+            self.is_flashing = True
             return
         self.lives       -= 1
         self.inv_timer    = INVINCIBILITY_DURATION

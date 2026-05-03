@@ -27,11 +27,22 @@ _ROOT = _script_dir()
 class Renderer:
     """Encapsula operações OpenGL em funções de desenho reutilizáveis."""
 
+    # Duração de cada metade da transição (fade-out + fade-in), em segundos
+    TRANSITION_HALF = 0.75
+
     def __init__(self):
         self._bg_textures  = []   # tex_id por fase (0 = sem imagem)
         self._bg_scroll    = 0.0  # deslocamento UV horizontal
         self._player_textures = []  # sprite do personagem por fase
         self._player_aspect   = []  # altura / largura (para manter proporção em NDC)
+
+        # --- Transição de fase ---
+        # Estado: None | 'fade_out' | 'fade_in'
+        self._trans_state      = None
+        self._trans_timer      = 0.0   # tempo decorrido na etapa atual
+        self._trans_from_phase = 0     # fase de onde estamos saindo
+        self._trans_to_phase   = 0     # fase para onde estamos indo
+        self._trans_alpha      = 0.0   # opacidade atual do overlay preto (0..1)
 
     def load_phase_textures(self):
         """Carrega todas as imagens de fundo. Chame após contexto GL ativo."""
@@ -171,16 +182,63 @@ class Renderer:
             self._bg_scroll -= 1.0
 
     # ------------------------------------------------------------------ #
+    #  Transição de fase                                                   #
+    # ------------------------------------------------------------------ #
+
+    def start_phase_transition(self, from_phase: int, to_phase: int):
+        """Inicia transição de fade entre duas eras. Chame ao detectar mudança de fase."""
+        self._trans_from_phase = from_phase
+        self._trans_to_phase   = to_phase
+        self._trans_state      = 'fade_out'
+        self._trans_timer      = 0.0
+        self._trans_alpha      = 0.0
+
+    def update_transition(self, dt: float) -> bool:
+        """Atualiza animação de fade. Retorna True enquanto a transição estiver ativa."""
+        if self._trans_state is None:
+            return False
+        self._trans_timer += dt
+        half = self.TRANSITION_HALF
+        if self._trans_state == 'fade_out':
+            self._trans_alpha = min(self._trans_timer / half, 1.0)
+            if self._trans_timer >= half:
+                self._trans_state = 'fade_in'
+                self._trans_timer = 0.0
+        elif self._trans_state == 'fade_in':
+            self._trans_alpha = 1.0 - min(self._trans_timer / half, 1.0)
+            if self._trans_timer >= half:
+                self._trans_state = None
+                self._trans_alpha = 0.0
+        return True
+
+    @property
+    def transition_active(self) -> bool:
+        return self._trans_state is not None
+
+    @property
+    def transition_phase(self) -> int:
+        """Fase que deve ser usada para o fundo durante a transição."""
+        if self._trans_state == 'fade_in':
+            return self._trans_to_phase
+        return self._trans_from_phase
+
+    # ------------------------------------------------------------------ #
     #  Fundo                                                               #
     # ------------------------------------------------------------------ #
 
     def draw_background(self, phase: int):
-        """Desenha fundo da fase por textura ou cor sólida se arquivo faltar."""
-        tid = self._bg_textures[phase] if phase < len(self._bg_textures) else 0
+        """Desenha fundo da fase por textura ou cor sólida se arquivo faltar.
+        Durante transição de era, usa a fase correta e aplica overlay preto de fade."""
+        render_phase = self.transition_phase if self.transition_active else phase
+        tid = self._bg_textures[render_phase] if render_phase < len(self._bg_textures) else 0
         if tid:
             self._draw_texture_bg(tid)
         else:
-            self._draw_solid_fallback_bg(phase)
+            self._draw_solid_fallback_bg(render_phase)
+
+        # Overlay de fade preto por cima do fundo (alpha 0→1→0)
+        if self.transition_active and self._trans_alpha > 0.0:
+            self.draw_overlay(0.0, 0.0, 0.0, self._trans_alpha)
 
     def _draw_texture_bg(self, tid: int):
         u0 = self._bg_scroll

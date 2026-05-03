@@ -43,13 +43,18 @@ class GameState:
             return
 
         self.elapsed += dt
+        old_phase = self.level.phase
         self.level.update(self.elapsed)
+        new_phase = self.level.phase
+        if new_phase != old_phase:
+            self.renderer.start_phase_transition(old_phase, new_phase)
 
         speed    = self.level.scroll_speed
         interval = self.level.spawn_interval
         phase    = self.level.phase
 
         self.renderer.update_scroll(dt, speed)
+        self.renderer.update_transition(dt)
         self.player.update(dt)
 
         # Spawna a linha de chegada exatamente quando o tempo total acaba

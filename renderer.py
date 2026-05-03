@@ -404,27 +404,30 @@ class Renderer:
         c  = PHASE_COLORS[phase]["obstacle"]
         x, y = float(obstacle.position[0]), float(obstacle.position[1])
         w, h = obstacle.width, obstacle.height
+        # Corrige a proporção para que o bloco fique visualmente quadrado na tela.
+        # A física e a colisão continuam usando as dimensões originais do obstáculo.
+        w_render = w * (WINDOW_HEIGHT / WINDOW_WIDTH)
         r, g, b = c
 
         # Face principal
         glColor3f(*c)
         glBegin(GL_QUADS)
         glVertex2f(x,     y)
-        glVertex2f(x + w, y)
-        glVertex2f(x + w, y + h)
+        glVertex2f(x + w_render, y)
+        glVertex2f(x + w_render, y + h)
         glVertex2f(x,     y + h)
         glEnd()
 
         # Detalhe interno (quadrado menor) — imita os blocos do GD
-        m  = min(w, h) * 0.18   # margem interna
+        m  = min(w_render, h) * 0.18   # margem interna
         ir = min(r * 0.5, 1.0)
         ig = min(g * 0.5, 1.0)
         ib = min(b * 0.5, 1.0)
         glColor4f(ir, ig, ib, 0.65)
         glBegin(GL_QUADS)
         glVertex2f(x + m,     y + m)
-        glVertex2f(x + w - m, y + m)
-        glVertex2f(x + w - m, y + h - m)
+        glVertex2f(x + w_render - m, y + m)
+        glVertex2f(x + w_render - m, y + h - m)
         glVertex2f(x + m,     y + h - m)
         glEnd()
 
@@ -435,16 +438,16 @@ class Renderer:
         glVertex2f(x + 0.004, y + h)
         glVertex2f(x + 0.004, y)
         glVertex2f(x,         y + h - 0.004)
-        glVertex2f(x + w,     y + h - 0.004)
+        glVertex2f(x + w_render,     y + h - 0.004)
         glEnd()
 
         # Sombra no canto inferior-direito
         glColor4f(0.0, 0.0, 0.0, 0.35)
         glBegin(GL_LINES)
-        glVertex2f(x + w - 0.004, y + h)
-        glVertex2f(x + w - 0.004, y)
+        glVertex2f(x + w_render - 0.004, y + h)
+        glVertex2f(x + w_render - 0.004, y)
         glVertex2f(x,             y + 0.004)
-        glVertex2f(x + w,         y + 0.004)
+        glVertex2f(x + w_render,         y + 0.004)
         glEnd()
 
         # Contorno externo
@@ -452,8 +455,8 @@ class Renderer:
         glLineWidth(1.5)
         glBegin(GL_LINE_LOOP)
         glVertex2f(x,     y)
-        glVertex2f(x + w, y)
-        glVertex2f(x + w, y + h)
+        glVertex2f(x + w_render, y)
+        glVertex2f(x + w_render, y + h)
         glVertex2f(x,     y + h)
         glEnd()
 

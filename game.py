@@ -7,6 +7,7 @@ from renderer import Renderer
 from hud      import HUD
 from collision import circle_aabb_collision
 from constants import PLAYER_RADIUS, TOTAL_GAME_TIME, PLAYER_GROUND_Y, PLAYER_X_NDC
+import random
 
 
 def _entry_audio_module():
@@ -30,6 +31,9 @@ class GameState:
         self.obstacles = ObstacleManager()
         self.level     = LevelManager()
         self.hud       = HUD(self.renderer)
+
+        # Salva o estado inicial do RNG para poder replicar a mesma sequência ao reiniciar
+        self._rng_state = random.getstate()
 
         self.elapsed         = 0.0
         self.state           = "running"
@@ -158,6 +162,9 @@ class GameState:
             self.player.jump()
 
     def on_restart(self):
+        # Restaura o RNG ao estado inicial para que reiniciar replique o comportamento
+        # exato do início da execução (mesma sequência / jitter)
+        random.setstate(self._rng_state)
         self.elapsed         = 0.0
         self.state           = "running"
         self._finish_x       = 2.5

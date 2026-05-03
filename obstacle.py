@@ -1,16 +1,21 @@
-"""Entidades de obstáculo e gerenciamento de spawn/pool.
+"""Entidades de obstáculo e gerenciamento de spawn por sequências pré-definidas por fase.
 
-Tipos de obstáculo:
-  - 'spike'  : espinho triangular — qualquer toque tira vida
-  - 'block'  : bloco sólido — pode pular EM CIMA (topo), lateral/inferior tira vida
+Tipos:
+  'spike'  — espinho triangular; qualquer toque tira vida.
+  'block'  — bloco sólido; topo é superfície segura, lados/base tiram vida.
 
-Sequências pré-montadas são selecionadas por dificuldade (easy/medium/hard)
-proporcional à fase atual. Cada peça da sequência é um dict:
-    kind : 'spike' | 'block'
-    ox   : offset X relativo ao início da sequência (NDC)
-    oy   : offset Y a partir do GROUND_TOP_Y (0 = no chão, positivo = elevado)
-    w    : largura (NDC)
-    h    : altura (NDC)
+Cada sequência é lista de dicts:  kind, ox, oy, w, h
+  ox  — offset X a partir do ponto de spawn (NDC)
+  oy  — offset Y a partir do GROUND_TOP_Y (0 = chão, positivo = elevado)
+
+Regra de composição visual:
+  Blocos que devem ficar "colados" são representados como UMA peça maior:
+    lado a lado  → _blk(ox, w=2*_B)   (bloco largo)
+    empilhados   → _blk(ox, h=2*_H)   (bloco alto) / h=3*_H etc.
+
+Seleção: round-robin por fase, com stair-guard — depois de uma sequência com
+  plataforma elevada (oy > 0), o gerador pula automaticamente qualquer sequência
+  cujo primeiro elemento seja um espinho ao nível do chão.
 """
 
 import random
@@ -22,256 +27,328 @@ from constants import (
 )
 
 # ---------------------------------------------------------------------------
-# Tamanhos base
+# Dimensões base
 # ---------------------------------------------------------------------------
-SPIKE_W  = 0.07
-SPIKE_H  = 0.12
-BLOCK_W  = 0.09
-BLOCK_H  = 0.09
+SPK_W = 0.08
+SPK_H = 0.13
+BLK_W = 0.13
+BLK_H = 0.13
 
-# ---------------------------------------------------------------------------
-# Fisica do jogador — espelhados de constants para calculo de passabilidade
-# ---------------------------------------------------------------------------
-_JUMP_VEL       = 2.0    # PLAYER_JUMP_VELOCITY
-_GRAVITY_ABS    = 5.0    # abs(GRAVITY)
-_RADIUS         = 0.05   # PLAYER_RADIUS
+_S  = SPK_W
+_B  = BLK_W
+_H  = BLK_H
+_G  = 0.04    # gap entre peças distintas que se encostam
+_J0 = 0.42    # gap extra-largo (P0 — iniciantes)
+_J  = 0.30    # gap confortável (P1–P2)
+_JM = 0.22    # gap médio      (P2–P3)
+_JS = 0.14    # gap curto      (P3–P4)
 
-# Altura maxima de pulo: v²/(2g)
-JUMP_MAX_HEIGHT  = (_JUMP_VEL ** 2) / (2 * _GRAVITY_ABS)   # aprox 0.40 NDC
-# Margem de seguranca (82% da altura maxima)
-SAFE_JUMP_HEIGHT = JUMP_MAX_HEIGHT * 0.82                   # aprox 0.328 NDC
+# Física do jogador (espelhado de constants.py)
+_JUMP_VEL    = 2.0
+_GRAVITY_ABS = 5.0
+JUMP_MAX_H   = (_JUMP_VEL ** 2) / (2 * _GRAVITY_ABS)   # ≈ 0.40 NDC
 
-# ---------------------------------------------------------------------------
-# Helpers de criacao de pecas
-# ---------------------------------------------------------------------------
-def _spk(ox, oy=0.0, w=SPIKE_W, h=SPIKE_H):
+STOP_SPAWN_BEFORE_END = 9.0
+
+
+def _spk(ox, oy=0.0, w=SPK_W, h=SPK_H):
     return dict(kind='spike', ox=ox, oy=oy, w=w, h=h)
 
-def _blk(ox, oy=0.0, w=BLOCK_W, h=BLOCK_H):
+def _blk(ox, oy=0.0, w=BLK_W, h=BLK_H):
     return dict(kind='block', ox=ox, oy=oy, w=w, h=h)
 
-_G  = 0.04    # gap minimo entre pecas
-_S  = SPIKE_W
-_B  = BLOCK_W
-_BH = BLOCK_H
+
+# ---------------------------------------------------------------------------
+# Utilitários — stair guard
+# ---------------------------------------------------------------------------
+
+def is_stair(seq: list) -> bool:
+    """True se a sequência contém um bloco com plataforma elevada (oy > 0).
+
+    Após uma sequência de escadinha, o jogador pode estar em queda livre.
+    Isso sinaliza ao gerador que a PRÓXIMA sequência não deve começar com
+    um espinho ao nível do chão.
+    """
+    return any(p['kind'] == 'block' and p['oy'] > 0.0 for p in seq)
+
+
+def _starts_with_spike(seq: list) -> bool:
+    """True se o primeiro elemento da sequência (menor ox) é espinho no chão."""
+    if not seq:
+        return False
+    first = min(seq, key=lambda p: p['ox'])
+    return first['kind'] == 'spike' and first['oy'] < 0.01
 
 
 # ===========================================================================
-# SEQUENCIAS FACEIS  (fase 0-1)
+# FASE 0 — Futurista  (0–35 s)  ·  Muito Fácil
+#
+#  Regras:
+#   • Espinhos sempre isolados — nunca dois lado a lado
+#   • Nunca blocos empilhados na mesma coluna
+#   • Escadinhas: máx. 2 degraus, regra 2H:1V
+#     (cada degrau = bloco largo w=2×BW; subida = 1×BH)
+#   • Gaps generosos: _J0 = 0.42 NDC entre obstáculos consecutivos
+#
+#  Ordem round-robin projetada para que staircases (idx 4 e 7) sejam
+#  seguidas por sequências que NÃO começam com espinho (stair-guard de backup):
+#    idx 4 (stair) → idx 5 (bloco+espinho distante, começa com bloco) ✓
+#    idx 7 (stair) → wrap → idx 0 (bloco isolado) ✓
 # ===========================================================================
-SEQUENCES_EASY = [
-    # 1 espinho isolado
-    [_spk(0.0)],
-    # 1 bloco baixo
+SEQUENCES_P0 = [
+    # 0 — Bloco isolado  (obstáculo mais simples)
     [_blk(0.0)],
-    # 2 espinhos com espaco entre eles (dois saltos curtos)
-    [_spk(0.0), _spk(0.22)],
-    # bloco + espinho separados
-    [_blk(0.0), _spk(0.22)],
-    # 2 blocos (plataforma curta para pousar)
-    [_blk(0.0), _blk(_B + _G)],
-    # espinho entre dois blocos (pula o bloco 1, aterrissa, pula o espinho)
-    [_blk(0.0), _spk(0.14), _blk(0.25)],
 
-    # Mini escadinha 2 degraus — sobe 1 bloco e cai do outro lado
-    # Jogador pula no degrau (nível 1) e depois pula para frente
+    # 1 — Plataforma larga  (bloco 2× de largura, sem costura)
+    [_blk(0.0, w=2*_B)],
+
+    # 2 — Espinho isolado  (salto básico)
+    [_spk(0.0)],
+
+    # 2b — [GAP VAZIO — respiro para o jogador sem obstáculos]
+    [],
+
+    # 3 — Dois espinhos com gap extra-largo  (dois saltos independentes)
+    [_spk(0.0), _spk(_S + _J0)],
+
+    # 4 — Escadinha ascendente 2 degraus  ← STAIR
+    #     Degrau 1 = bloco largo ao nível do chão
+    #     Degrau 2 = bloco largo 1×BH acima, 2×BW à frente
     [
-        _blk(0.00),                    # degrau 1 base
-        _blk(0.00, oy=_BH),            # degrau 1 topo (nivel 2)
-        _blk(_B + _G),                  # degrau 2 base (mais a frente, nivel 1)
+        _blk(0.0, w=2*_B),
+        _blk(2*_B + _G, oy=_H, w=2*_B),
     ],
 
-    # Ponte simples: bloco-espinho-bloco
-    # Pula no bloco 1, pula o espinho do chão, pousa no bloco 2
+    # 5 — Bloco + espinho distante  (começa com bloco → seguro após stair idx 4)
+    [_blk(0.0), _spk(_B + _J0)],
+
+    # 6 — Escadinha 2 degraus + plataforma de aterrissagem  ← STAIR
+    #     Bloco final serve de zona de pouso após a descida
     [
-        _blk(0.00),
-        _spk(_B + _G + 0.01),
-        _blk(_B + _G + _S + _G),
+        _blk(0.0, w=2*_B),
+        _blk(2*_B + _G, oy=_H, w=2*_B),
+        _blk(4*_B + 2*_G + _J0),
     ],
+    # wrap → idx 0 (bloco isolado) — seguro após stair ✓
 ]
 
-# ===========================================================================
-# SEQUENCIAS MEDIAS  (fase 1-3)
-# ===========================================================================
-SEQUENCES_MEDIUM = [
-    # 3 espinhos seguidos (salto unico longo)
-    [_spk(0.0), _spk(_S + _G), _spk(2*(_S + _G))],
 
-    # Torre alta — bloco com 2.5x a altura normal
-    [_blk(0.0, h=_BH * 2.5)],
+# ===========================================================================
+# FASE 1 — Era Moderna  (35–65 s)  ·  Fácil-Médio
+#
+#  Novidades: torres h=2×BH (peça única), combo bloco+espinho no topo,
+#             escadinha 3 colunas crescentes (1H→2H→3H), gaps reduzidos.
+#
+#  Nenhuma sequência tem oy > 0 → is_stair sempre False → stair-guard inativo.
+#  Ordering: índices 0–3 iniciam com bloco (tranquilos); 4–7 com espinho.
+# ===========================================================================
+SEQUENCES_P1 = [
+    # 0 — Torre 2×BH  (peça única, sem costura)
+    [_blk(0.0, h=2*_H)],
 
-    # Escadinha 3 degraus ascendente
-    # Jogador sobe: degrau1(altura 1) -> degrau2(altura 2) -> degrau3(altura 3)
-    # e depois cai do outro lado (cada degrau e uma coluna de blocos)
+    # 1 — Bloco + espinho no topo  (combo; jogador pula o conjunto inteiro)
+    [_blk(0.0), _spk(0.0, oy=_H)],
+
+    # 2 — Escadinha 3 colunas crescentes  (1H → 2H → 3H)
     [
-        # degrau 1 (coluna de 1 bloco)
-        _blk(0.00),
-        # degrau 2 (coluna de 2 blocos)
-        _blk(_B + _G),
-        _blk(_B + _G, oy=_BH),
-        # degrau 3 (coluna de 3 blocos) — topo mais alto
-        _blk(2*(_B + _G)),
-        _blk(2*(_B + _G), oy=_BH),
-        _blk(2*(_B + _G), oy=2*_BH),
+        _blk(0.0),
+        _blk(_B + _G, h=2*_H),
+        _blk(2*(_B + _G), h=3*_H),
     ],
 
-    # Ponte com espinhos nas pontas
-    # Pula nos 2 blocos do meio evitando os espinhos das bordas
+    # 3 — Torre 2×BH + espinho depois  (começa com bloco)
+    [_blk(0.0, h=2*_H), _spk(_B + _J)],
+
+    # 4 — 3 espinhos com gap médio  ← SPIKE
+    [_spk(0.0), _spk(_S + 0.22), _spk(2*_S + 0.44)],
+
+    # 5 — 2 espinhos próximos + bloco distante  ← SPIKE
+    [_spk(0.0), _spk(_S + _G), _blk(2*_S + 2*_G + _J)],
+
+    # 6 — Espinho + torre(2H) + espinho  ← SPIKE
+    [_spk(0.0), _blk(_S + _G, h=2*_H), _spk(_S + _G + _B + _G)],
+
+    # 7 — Espinho + escadinha 3 colunas  ← SPIKE
+    [_spk(0.0), _blk(_S + _J, h=2*_H), _blk(_S + _J + _B + _G, h=3*_H)],
+]
+
+
+# ===========================================================================
+# FASE 2 — Revolução Industrial  (65–106 s)  ·  Médio
+#
+#  Torres máx. 2.5×BH; gaps _JM=0.22; 1 respiro vazio; ~4 SPIKE-starters.
+#  Progressão: respiro → single → combos torre/spike → labirinto simples.
+# ===========================================================================
+SEQUENCES_P2 = [
+    # 0 — Respiro  (sem obstáculos — transição suave ao entrar em P2)
+    [],
+
+    # 1 — Torre 2.5×BH  (peça única, máximo desta fase)
+    [_blk(0.0, h=_H * 2.5)],
+
+    # 2 — Bloco + espinho a _JM de gap
+    [_blk(0.0), _spk(_B + _JM)],
+
+    # 3 — Torre(2H) + espinho _G + bloco  (3 elementos, NON-SPIKE)
+    [_blk(0.0, h=2*_H), _spk(_B + _G), _blk(_B + _G + _S + _JM)],
+
+    # 4 — Espinho + torre(2H) + espinho  ← SPIKE
+    [_spk(0.0), _blk(_S + _G, h=2*_H), _spk(_S + _G + _B + _G)],
+
+    # 5 — Par próximo + bloco a _JM  ← SPIKE
+    [_spk(0.0), _spk(_S + _G), _blk(2*_S + 2*_G + _JM)],
+
+    # 6 — Ponte: spike–bloco–bloco–spike  ← SPIKE
     [
-        _spk(0.00),
-        _blk(_S + _G),
-        _blk(_S + _G + _B + _G),
+        _spk(0.0),
+        _blk(_S + _G), _blk(_S + _G + _B + _G),
         _spk(_S + _G + 2*_B + 2*_G),
     ],
 
-    # Ponte longa com espinho no topo do bloco do meio
-    # Plataforma de 3 blocos; o do meio tem espinho em cima (precisa pular)
-    [
-        _blk(0.00),
-        _blk(_B + _G),
-        _spk(_B + _G, oy=_BH),            # espinho sobre o bloco central
-        _blk(2*(_B + _G)),
-    ],
-
-    # Torre dupla (2 blocos empilhados)
-    [_blk(0.0), _blk(0.0, oy=_BH)],
-
-    # Espinho + torre + espinho
-    [_spk(0.0), _blk(_S + _G, h=_BH * 2.0), _spk(_S + _G + _B + _G)],
-
-    # Plataforma elevada: bloco no ar com espinhos embaixo nas laterais
-    # (bloco elevado em cima de coluna de 2, espinhos no chao nas pontas)
-    [
-        _spk(0.00),
-        _blk(_S + _G),
-        _blk(_S + _G, oy=_BH),             # topo da coluna (pousa aqui)
-        _spk(_S + _G + _B + _G),
-    ],
-
-    # Escadinha com espinhos entre os degraus (inspirada no desenho da entrega)
-    # Jogador sobe degraus alternando com espinhos no chão entre eles
-    [
-        _blk(0.00),                              # degrau 1 (1 bloco)
-        _spk(_B + _G),                           # espinho entre 1 e 2
-        _blk(_B + _G + _S + _G),                # degrau 2 (1 bloco)
-        _blk(_B + _G + _S + _G, oy=_BH),        # degrau 2 topo (2 blocos)
-        _spk(_B + _G + _S + _G + _B + _G),      # espinho entre 2 e 3
-        _blk(_B + _G + _S + _G + _B + _G + _S + _G),           # degrau 3 base
-        _blk(_B + _G + _S + _G + _B + _G + _S + _G, oy=_BH),  # degrau 3 meio
-        _blk(_B + _G + _S + _G + _B + _G + _S + _G, oy=2*_BH),# degrau 3 topo
-    ],
+    # 7 — 3 espinhos com gap _JM entre cada  ← SPIKE
+    [_spk(0.0), _spk(_S + _JM), _spk(2*_S + 2*_JM)],
 ]
 
+
 # ===========================================================================
-# SEQUENCIAS DIFICEIS  (fase 3-4)
+# FASE 3 — Era Medieval  (106–138 s)  ·  Difícil
+#
+#  Torres máx. 3×BH; gaps _JS=0.14; ~5 SPIKE-starters.
+#  idx 0 é escadinha com plataforma elevada (oy=_H > 0) → stair-guard ativo.
+#  idx 1 NON-SPIKE por design: seguro após stair na ordenação round-robin.
 # ===========================================================================
-SEQUENCES_HARD = [
-    # 4 espinhos em 2 pares — gap no meio permite um duplo salto curto
-    # (par 1: 2 espinhos próximos; pouso; par 2: mais 2 espinhos)
+SEQUENCES_P3 = [
+    # 0 — Plataforma elevada descendente  ← STAIR  (bloco oy=_H → chão + espinho)
+    #     is_stair=True → stair-guard previne spike-starter na próxima sequência.
     [
-        _spk(0.0), _spk(_S + _G),
-        _spk(2*_S + 3*_G),                # gap maior entre os pares
-        _spk(3*_S + 4*_G),
+        _blk(0.0, oy=_H, w=2*_B),
+        _blk(2*_B + _G),
+        _spk(3*_B + _G + _JS),
     ],
 
-    # Escadinha 4 degraus com espinho apos a descida
+    # 1 — Escadinha crescente 1H→2H→3H + espinho  (NON-SPIKE — seguro após stair)
     [
-        # degrau 1
-        _blk(0.00),
-        # degrau 2
-        _blk(_B+_G), _blk(_B+_G, oy=_BH),
-        # degrau 3
-        _blk(2*(_B+_G)), _blk(2*(_B+_G), oy=_BH), _blk(2*(_B+_G), oy=2*_BH),
-        # espinho logo apos a descida
-        _spk(3*(_B+_G)),
+        _blk(0.0),
+        _blk(_B + _G, h=2*_H),
+        _blk(2*(_B + _G), h=3*_H),
+        _spk(3*(_B + _G)),
     ],
 
-    # Labirinto espinho-bloco-espinho-bloco
-    [_spk(0.0), _blk(_S+_G), _spk(_S+_G+_B+_G), _blk(2*_S+_B+3*_G)],
+    # 2 — Torre(3H) + espinho _JS + torre(2H)  (NON-SPIKE)
+    [_blk(0.0, h=3*_H), _spk(_B + _JS), _blk(_B + _JS + _S + _G, h=2*_H)],
 
-    # Ponte difícil: blocos com espinhos EM CIMA (precisa pular sobre eles)
+    # 3 — Espinho + torre(3H) + espinho  ← SPIKE
+    [_spk(0.0), _blk(_S + _G, h=3*_H), _spk(_S + _G + _B + _G)],
+
+    # 4 — Labirinto alternado spike-blk-spike-blk  ← SPIKE
     [
-        _spk(0.00),
-        _blk(_S+_G),       _spk(_S+_G, oy=_BH),
-        _blk(_S+_G+_B+_G), _spk(_S+_G+_B+_G, oy=_BH),
-        _spk(_S+_G+2*_B+2*_G),
+        _spk(0.0), _blk(_S + _G),
+        _spk(_S + _G + _B + _G),
+        _blk(2*_S + _B + 3*_G),
     ],
 
-    # Corredor: espinhos + torre alta no fim (pula os espinhos, despista a torre)
-    [_spk(0.0), _spk(_S+_G), _blk(2*(_S+_G), h=_BH*3.0)],
-
-    # Degraus alternados com espinhos no chao entre eles
+    # 5 — Torres 2H alternadas com espinhos entre elas  ← SPIKE  (5 elementos)
     [
-        _spk(0.00),
-        _blk(_S+_G), _blk(_S+_G, oy=_BH),
-        _spk(_S+_G+_B+_G),
-        _blk(2*_S+_B+3*_G), _blk(2*_S+_B+3*_G, oy=_BH),
-        _spk(2*_S+2*_B+4*_G),
+        _spk(0.0),
+        _blk(_S + _G, h=2*_H),
+        _spk(_S + _G + _B + _G),
+        _blk(2*_S + _B + 3*_G, h=2*_H),
+        _spk(2*_S + 2*_B + 4*_G),
     ],
 
-    # Quatro espinhos com bloco de fuga no centro
-    [
-        _spk(0.0), _spk(_S+_G),
-        _blk(2*(_S+_G)),
-        _spk(2*(_S+_G)+_B+_G), _spk(3*_S+_B+3*_G),
-    ],
+    # 6 — Par de espinhos + torre(3H)  ← SPIKE
+    [_spk(0.0), _spk(_S + _G), _blk(2*_S + 2*_G + _JS, h=3*_H)],
 
-    # Torre tripla com espinhos nas duas laterais
+    # 7 — Espinhões largos (w=0.10) + bloco de fuga  ← SPIKE
     [
-        _spk(0.00),
-        _blk(_S+_G, h=_BH*3),
-        _spk(_S+_G+_B+_G),
-    ],
-
-    # Escadinha descendente (desce 3 niveis) + espinho no fim
-    # (blocos decrecem em altura — jogador cai de plataforma em plataforma)
-    [
-        # plataforma alta (3 blocos)
-        _blk(0.00), _blk(0.00, oy=_BH), _blk(0.00, oy=2*_BH),
-        # plataforma media (2 blocos) a frente
-        _blk(_B+_G), _blk(_B+_G, oy=_BH),
-        # plataforma baixa (1 bloco) a frente
-        _blk(2*(_B+_G)),
-        # espinho no chao logo depois
-        _spk(3*(_B+_G)),
-    ],
-
-    # Dois espinhos largos com bloco de fuga no meio (difícil mas passável)
-    [
-        _spk(0.0, w=0.10, h=0.14),
+        _spk(0.0,                  w=0.10, h=0.14),
         _blk(0.10 + _G),
         _spk(0.10 + _G + _B + _G, w=0.10, h=0.14),
     ],
 ]
 
-ALL_SEQUENCES = {
-    'easy':   SEQUENCES_EASY,
-    'medium': SEQUENCES_MEDIUM,
-    'hard':   SEQUENCES_HARD,
-}
 
-# Distribuicao de dificuldade por fase (easy, medium, hard)
-PHASE_DIFFICULTY_DIST = [
-    (0.80, 0.20, 0.00),
-    (0.55, 0.35, 0.10),
-    (0.25, 0.50, 0.25),
-    (0.10, 0.38, 0.52),
-    (0.00, 0.20, 0.80),
+# ===========================================================================
+# FASE 4 — Pré-História  (138–168 s)  ·  Muito Difícil
+#
+#  Sem oy>0 (nenhuma plataforma elevada); gaps _JS=0.14; ~6 SPIKE-starters.
+#  3–6 elementos por seq; espinhões w=0.10 em seq 6; sem respiros.
+# ===========================================================================
+SEQUENCES_P4 = [
+    # 0 — Descida 3H→2H→1H + espinhos duplos  (NON-SPIKE)
+    [
+        _blk(0.0, h=3*_H),
+        _blk(_B + _G, h=2*_H),
+        _blk(2*(_B + _G)),
+        _spk(3*(_B + _G)), _spk(3*(_B + _G) + _S + _G),
+    ],
+
+    # 1 — Par de espinhos + torre(3H)  ← SPIKE
+    [_spk(0.0), _spk(_S + _G), _blk(2*_S + 2*_G, h=3*_H)],
+
+    # 2 — Escadinha densa 1H→2H→3H + espinho  (NON-SPIKE, gaps mínimos _G)
+    [
+        _blk(0.0),
+        _blk(_B + _G, h=2*_H),
+        _blk(2*(_B + _G), h=3*_H),
+        _spk(3*(_B + _G)),
+    ],
+
+    # 3 — Labirinto 5 elementos spike-blk alternado  ← SPIKE
+    [
+        _spk(0.0),
+        _blk(_S + _G),
+        _spk(_S + _G + _B + _G),
+        _blk(2*_S + _B + 3*_G),
+        _spk(2*_S + 2*_B + 4*_G),
+    ],
+
+    # 4 — Torre(3H) flanqueada por pares de espinhos  ← SPIKE
+    [
+        _spk(0.0), _spk(_S + _G),
+        _blk(2*_S + 2*_G, h=3*_H),
+        _spk(2*_S + 2*_G + _B + _G), _spk(3*_S + 2*_G + _B + 2*_G),
+    ],
+
+    # 5 — 4 espinhos consecutivos  ← SPIKE
+    [_spk(0.0), _spk(_S + _G), _spk(2*(_S + _G)), _spk(3*(_S + _G))],
+
+    # 6 — Espinhões largos (w=0.10) + bloco de fuga  ← SPIKE
+    [
+        _spk(0.0,                  w=0.10, h=0.14),
+        _blk(0.10 + _G),
+        _spk(0.10 + _G + _B + _G, w=0.10, h=0.14),
+    ],
+
+    # 7 — Sequência mista máxima (6 elementos)  ← SPIKE
+    [
+        _spk(0.0),
+        _blk(_S + _G, h=2*_H),
+        _spk(_S + _G + _B + _G), _spk(_S + _G + _B + _G + _S + _G),
+        _blk(_S + _G + _B + 3*_G + 2*_S, h=3*_H),
+        _spk(_S + _G + 2*_B + 4*_G + 2*_S),
+    ],
 ]
 
-# Para de spawnar X segundos antes do fim (deixa a tela limpa para a linha de chegada)
-STOP_SPAWN_BEFORE_END = 9.0
+
+SEQUENCES_PHASE = [
+    SEQUENCES_P0,
+    SEQUENCES_P1,
+    SEQUENCES_P2,
+    SEQUENCES_P3,
+    SEQUENCES_P4,
+]
 
 
 # ---------------------------------------------------------------------------
-# Classe de uma peca de obstaculo
+# Classe de uma peça de obstáculo
 # ---------------------------------------------------------------------------
 class ObstaclePiece:
     def __init__(self):
         self.kind     = 'spike'
         self.position = np.array([OBSTACLE_DESPAWN_X - 2.0, GROUND_TOP_Y], dtype=float)
-        self.width    = SPIKE_W
-        self.height   = SPIKE_H
+        self.width    = SPK_W
+        self.height   = SPK_H
         self.active   = False
 
     def activate(self, kind: str, x: float, y: float, w: float, h: float):
@@ -305,15 +382,18 @@ class ObstacleManager:
     POOL_SIZE = 80
 
     def __init__(self):
-        self._pool        = [ObstaclePiece() for _ in range(self.POOL_SIZE)]
-        self._spawn_timer = 0.0
+        self._pool          = [ObstaclePiece() for _ in range(self.POOL_SIZE)]
+        self._spawn_timer   = 0.0
+        # Round-robin: índice independente por fase
+        self._seq_indices   = [0] * len(SEQUENCES_PHASE)
+        # Stair-guard: True se a última sequência continha plataforma elevada
+        self._last_was_stair = False
 
     def update(self, dt: float, speed: float, spawn_interval: float,
                phase: int, elapsed: float, total_time: float):
         for p in self._pool:
             p.update(dt, speed)
 
-        # Para de spawnar perto do fim
         if total_time - elapsed <= STOP_SPAWN_BEFORE_END:
             return
 
@@ -323,29 +403,27 @@ class ObstacleManager:
             jitter = random.uniform(-SPAWN_JITTER, SPAWN_JITTER)
             self._spawn_timer = spawn_interval + jitter
 
-    # ------------------------------------------------------------------ #
-    def _pick_difficulty(self, phase: int) -> str:
-        dist = PHASE_DIFFICULTY_DIST[min(phase, len(PHASE_DIFFICULTY_DIST) - 1)]
-        r = random.random()
-        if r < dist[0]:            return 'easy'
-        elif r < dist[0]+dist[1]:  return 'medium'
-        else:                      return 'hard'
-
     def _spawn_sequence(self, phase: int):
-        difficulty = self._pick_difficulty(phase)
-        seq = random.choice(ALL_SEQUENCES[difficulty])
-        if not self._is_passable(seq):
-            seq = [_spk(0.0)]
+        pool = SEQUENCES_PHASE[min(phase, len(SEQUENCES_PHASE) - 1)]
+        n    = len(pool)
+        idx  = self._seq_indices[phase]
+
+        # Stair-guard: pula sequências que começam com espinho se o jogador
+        # pode estar em queda livre após uma plataforma elevada.
+        if self._last_was_stair:
+            for _ in range(n):
+                if not _starts_with_spike(pool[idx % n]):
+                    break
+                idx += 1
+
+        seq = pool[idx % n]
+        self._seq_indices[phase] = (idx + 1) % n
+        self._last_was_stair     = is_stair(seq)
+
         for piece in seq:
             x = OBSTACLE_SPAWN_X + piece['ox']
             y = GROUND_TOP_Y     + piece['oy']
             self._activate_piece(piece['kind'], x, y, piece['w'], piece['h'])
-
-    def _is_passable(self, seq: list) -> bool:
-        for p in seq:
-            if p['oy'] + p['h'] > SAFE_JUMP_HEIGHT:
-                return False
-        return True
 
     def _activate_piece(self, kind, x, y, w, h):
         for p in self._pool:
@@ -359,4 +437,6 @@ class ObstacleManager:
     def reset(self):
         for p in self._pool:
             p.active = False
-        self._spawn_timer = 0.0
+        self._spawn_timer    = 0.0
+        self._seq_indices    = [0] * len(SEQUENCES_PHASE)
+        self._last_was_stair = False

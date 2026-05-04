@@ -103,6 +103,8 @@ def main():
     if not glfw.init():
         raise RuntimeError("Falha ao inicializar GLFW")
 
+    glfw.window_hint(glfw.RESIZABLE, glfw.FALSE)
+
     window = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, None, None)
     if not window:
         glfw.terminate()

@@ -1,16 +1,9 @@
-"""Barra de progresso de fase para o HUD do jogo.
-
-Desenha um retângulo de fundo + retângulo de preenchimento (verde→amarelo→vermelho)
-proporcional ao tempo decorrido, com label percentual no centro cacheado por inteiro.
-"""
+"""Barra de progresso de fase para o HUD do jogo."""
 
 from PIL import Image, ImageDraw, ImageFont
 from OpenGL.GL import *
 from constants import WINDOW_WIDTH, WINDOW_HEIGHT
 
-# ---------------------------------------------------------------------------
-# Estilo padrão (sobrescrevível chave-a-chave via parâmetro style=)
-# ---------------------------------------------------------------------------
 _DEFAULT_STYLE: dict = {
     "bg_color":     (0.12, 0.12, 0.12, 0.82),  # fundo escuro semi-transparente (RGBA 0-1)
     "border_color": (0.55, 0.55, 0.55, 0.85),  # borda cinza clara
@@ -19,21 +12,12 @@ _DEFAULT_STYLE: dict = {
     "label_color":  (255, 255, 255, 210),        # cor do texto (RGBA 0-255, para PIL)
 }
 
-# ---------------------------------------------------------------------------
-# Cache de textura do label percentual
-# A textura é recriada apenas quando o inteiro 0..100 muda; custa no máximo
-# 101 uploads durante toda a partida, zero recriações em frames intermediários.
-# ---------------------------------------------------------------------------
 _cache_percent: int = -1   # último percentual inteiro renderizado
 _cache_tex:     int = 0    # tex_id OpenGL; 0 = não alocado
 _cache_tw:      int = 0    # largura da textura em pixels
 _cache_th:      int = 0    # altura da textura em pixels
 _font = None               # fonte PIL; inicializada na primeira chamada
 
-
-# ---------------------------------------------------------------------------
-# Helpers internos
-# ---------------------------------------------------------------------------
 
 def _get_font():
     global _font
@@ -53,7 +37,6 @@ def _px_to_ndc_x(px: float) -> float:
 
 
 def _px_to_ndc_y(py: float) -> float:
-    # pixels crescem para baixo; NDC y cresce para cima
     return 1.0 - (py / WINDOW_HEIGHT) * 2.0
 
 
@@ -66,7 +49,6 @@ def _ndc_h(px_h: float) -> float:
 
 
 def _fill_color(fraction: float) -> tuple:
-    """Interpola verde→amarelo→vermelho conforme fração (0=início, 1=fim do nível)."""
     if fraction <= 0.5:
         t = fraction * 2.0           # 0→1 na primeira metade
         r, g = t, 1.0
@@ -74,11 +56,6 @@ def _fill_color(fraction: float) -> tuple:
         t = (fraction - 0.5) * 2.0  # 0→1 na segunda metade
         r, g = 1.0, 1.0 - t * 0.65
     return (r, g, 0.10, 0.95)
-
-
-# ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
 
 def render_progress(
     renderer,
@@ -90,16 +67,7 @@ def render_progress(
     h_px: float = 16,
     style: dict = None,
 ) -> None:
-    """Desenha a barra de progresso da fase no HUD.
-
-    Args:
-        renderer:   instância de Renderer com upload_text_texture / draw_texture_quad
-        elapsed:    tempo decorrido em segundos
-        total_time: duração total do nível em segundos (normalmente TOTAL_GAME_TIME)
-        x_px, y_px: posição do canto superior-esquerdo em pixels de tela
-        w_px, h_px: dimensões da barra em pixels de tela
-        style:      dict opcional; chaves de _DEFAULT_STYLE substituídas individualmente
-    """
+    """Desenha a barra de progresso da fase no HUD."""
     global _cache_percent, _cache_tex, _cache_tw, _cache_th
 
     s = {**_DEFAULT_STYLE, **(style or {})}
@@ -112,7 +80,7 @@ def render_progress(
     y_top = _px_to_ndc_y(y_px)          # NDC y do topo (valor maior)
     nw    = x1 - x0
 
-    # --- Retângulo de fundo ---
+    # Retângulo de fundo
     br, bg, bb, ba = s["bg_color"]
     glColor4f(br, bg, bb, ba)
     glBegin(GL_QUADS)
@@ -120,7 +88,7 @@ def render_progress(
     glVertex2f(x1, y_top); glVertex2f(x0, y_top)
     glEnd()
 
-    # --- Retângulo de preenchimento proporcional a fraction ---
+    # Retângulo de preenchimento proporcional a fraction
     if fraction > 0.0:
         fr, fg, fb, fa = _fill_color(fraction)
         fx1 = x0 + nw * fraction
@@ -130,7 +98,7 @@ def render_progress(
         glVertex2f(fx1, y_top); glVertex2f(x0,  y_top)
         glEnd()
 
-    # --- Borda ---
+    # Borda
     bc = s.get("border_color")
     if bc:
         br2, bg2, bb2, ba2 = bc
@@ -141,7 +109,7 @@ def render_progress(
         glVertex2f(x1, y_top); glVertex2f(x0, y_top)
         glEnd()
 
-    # --- Label percentual (cache invalidado apenas quando o inteiro muda) ---
+    # Label percentual
     if s.get("show_label", True):
         percent = int(fraction * 100)
         if percent != _cache_percent:

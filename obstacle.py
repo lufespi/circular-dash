@@ -1,40 +1,4 @@
-"""Entidades de obstaculo e gerenciamento de spawn por sequencias pre-definidas por fase.
-
-ANALISE FISICA COMPLETA
-=======================
-
-Constants: JUMP_VEL=1.5, GRAVITY=5.0, R=0.05, GROUND_TOP_Y=-0.70, PLAYER_GROUND_Y=-0.64
-Tolerancia colisao: 0.015
-
-Pulo:
-  Duracao = 2 * 1.5 / 5.0           = 0.60 s
-  Altura maxima (centro) = 1.5^2/10  = 0.225 NDC  (centro: -0.64 -> -0.415)
-  Tempo acima de h=0.13 (espinho)    = 0.438 s   (t in [0.081, 0.519])
-  Tempo dentro da snap zone do 2H    = 0.134 s   (t in [0.300, 0.434], vy<=0.05)
-
-Velocidades por fase:
-  P0: 0.40   P1: 0.52   P2: 0.64   P3: 0.76   P4: 0.88
-
-Spawn intervals por fase:
-  P0: 2.00   P1: 1.75   P2: 1.50   P3: 1.25   P4: 1.00
-
-Espaco util por sequencia (interval * speed - 0.22 margem):
-  P0: 0.58   P1: 0.69   P2: 0.74   P3: 0.73   P4: 0.66
-
-GAPS RECALIBRADOS (para caber dentro do espaco util de cada fase):
-  _J0=0.42  _J1=0.53  _J2=0.58  _J3=0.57  _J4=0.50
-  _BJ=0.10  (gap bloco->espinho no topo, jogador tem vantagem de altura)
-
-CLUSTER (passagem em UM pulo) - largura maxima do cluster:
-  Cw_max = 0.438 * V - 0.10 (margem de 2*R)
-  P0: 0.075   P1: 0.128   P2: 0.180   P3: 0.233   P4: 0.285
-
-REGRAS DE DESIGN:
-  - NUNCA espinho no topo de bloco no MESMO ox (jogador toca ao pousar)
-  - Bloco 3H so via ESCADA (a partir de plataforma 1H, snap zone alcanca)
-  - Bloco 2H pode ser pousado do chao (snap zone alcanca, pulo da margem)
-  - Stair: pelo menos um bloco com oy>0 -> stair-guard ativa proxima sequencia
-"""
+"""Entidades de obstaculo e gerenciamento de spawn por sequencias pre-definidas por fase."""
 
 import random
 import numpy as np
@@ -44,14 +8,10 @@ from constants import (
     SPAWN_JITTER,
 )
 
-# ---------------------------------------------------------------------------
-# Dimensoes base
-# ---------------------------------------------------------------------------
 SPK_W = 0.08
 SPK_H = 0.13
 BLK_W = 0.13
 BLK_H = 0.13
-
 _S  = SPK_W
 _B  = BLK_W
 _H  = BLK_H
@@ -79,10 +39,6 @@ def _blk(ox, oy=0.0, w=BLK_W, h=BLK_H):
     return dict(kind='block', ox=ox, oy=oy, w=w, h=h)
 
 
-# ---------------------------------------------------------------------------
-# Utilitarios - stair guard
-# ---------------------------------------------------------------------------
-
 def is_stair(seq: list) -> bool:
     return any(p['kind'] == 'block' and p['oy'] > 0.0 for p in seq)
 
@@ -94,9 +50,7 @@ def _starts_with_spike(seq: list) -> bool:
     return first['kind'] == 'spike' and first['oy'] < 0.01
 
 
-# ===========================================================================
-# FASE 0 - Futurista (0-35 s) - Muito Facil [NAO ALTERAR]
-# ===========================================================================
+# FASE 0 - Futurista (0-35 s)
 SEQUENCES_P0 = [
     [_blk(0.0)],
     [_blk(0.0, w=2*_B)],
@@ -109,12 +63,7 @@ SEQUENCES_P0 = [
 ]
 
 
-# ===========================================================================
-# FASE 1 - Era Moderna (35-65 s) - Facil-Medio
-#
-# V=0.52, interval=1.75s, ox_max=0.57 NDC, dist_pulo=0.312 NDC
-# Plataforma aerea: oy=0.5H — forcado a pular por cima
-# ===========================================================================
+# FASE 1 - Era Moderna (35-65 s)
 _P1_OY = 0.5 * _H
 
 SEQUENCES_P1 = [
@@ -129,13 +78,7 @@ SEQUENCES_P1 = [
 ]
 
 
-# ===========================================================================
-# FASE 2 - Revolucao Industrial (65-106 s) - Medio
-#
-# V=0.64, interval=1.50s, ox_max=0.54 NDC, dist_pulo=0.384 NDC
-# Plataformas aereas: oy=0.5H — jogador forcado a pular por cima
-# (nao passa por baixo: espaco=0.065 < diametro=0.10)
-# ===========================================================================
+# FASE 2 - Revolucao Industrial (65-106 s)
 _P2_OY = 0.5 * _H   # altura da plataforma aerea da P2
 
 SEQUENCES_P2 = [
@@ -150,21 +93,7 @@ SEQUENCES_P2 = [
 ]
 
 
-# ===========================================================================
-# FASE 3 - Era Medieval (106-138 s) - Dificil
-#
-# V=0.76, interval=1.25s, ox_max=0.45 NDC, dist_pulo=0.456 NDC
-# REGRAS:
-#   - Blocos isolados: apenas 1H (topo=-0.57), jogador pula por cima
-#   - Blocos 2H sozinhos: proibido (intransponivel do chao)
-#   - Dois obstaculos separados: dist inicio->inicio deve ser > 0.456
-#     Como ox_max=0.45 < 0.456, NAO e possivel ter 2 espinhos separados
-#     -> usar clusters (colados) para multiplos espinhos
-#   - Escada valida: bloco1H(ox=0) + bloco1H(oy=H, ox=B+G)
-#     jogador pousa no 1o, pula e passa o 2o (base pulo=-0.345 > topo -0.44)
-#   - Espinho apos bloco 1H: jogador esta em cima do bloco, tem vantagem
-# idx 0 e 5 sao STAIR -> stair-guard ativa idx 1 e 6 (NON-SPIKE).
-# ===========================================================================
+# FASE 3 - Era Medieval (106-138 s)
 SEQUENCES_P3 = [
     # 0 - Escada classica: bloco 1H + bloco 1H elevado (oy=H)  <- STAIR
     [
@@ -212,13 +141,7 @@ SEQUENCES_P3 = [
 ]
 
 
-# ===========================================================================
-# FASE 4 - Pre-Historia (138-168 s) - Muito Dificil
-#
-# V=0.88, interval=1.00s, ox_max=0.30 NDC
-# Gap entre obstaculos separados: _J4=0.12
-# Sequencias muito curtas (max 2-3 elem). Cluster triplo cabe (ox=0.16).
-# ===========================================================================
+# FASE 4 - Pre-Historia (138-168 s)
 SEQUENCES_P4 = [
     # 0 - Cluster triplo (tres espinhos colados = um pulo longo)
     [
@@ -273,9 +196,6 @@ SEQUENCES_PHASE = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Classe de uma peca de obstaculo
-# ---------------------------------------------------------------------------
 class ObstaclePiece:
     def __init__(self):
         self.kind     = 'spike'
@@ -308,9 +228,6 @@ class ObstaclePiece:
         return (x0, y0, x1, y1)
 
 
-# ---------------------------------------------------------------------------
-# Gerenciador
-# ---------------------------------------------------------------------------
 class ObstacleManager:
     POOL_SIZE = 80
 

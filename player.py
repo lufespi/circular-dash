@@ -23,11 +23,9 @@ class Player:
         # Superfície de pouso atual (None = chão normal, float = Y do topo do bloco)
         self._platform_y: float | None = None
 
-    # ------------------------------------------------------------------
     def set_platform(self, top_y: float):
         """Game informa que o player está pousado em uma plataforma."""
         self._platform_y = top_y
-        # Ancora posição imediatamente para evitar drift de 1 frame
         from constants import PLAYER_RADIUS
         self.position[1] = top_y + PLAYER_RADIUS
         self.velocity[1] = 0.0
@@ -37,14 +35,12 @@ class Player:
         """Remove referência de plataforma (saiu do bloco)."""
         self._platform_y = None
 
-    # ------------------------------------------------------------------
     def update(self, dt: float):
         """Integra física vertical e controla estado de invencibilidade."""
         # Aplica gravidade
         self.velocity[1] += GRAVITY * dt
         self.position    += self.velocity * dt
 
-        # Clamp no chão de pedra
         if self.position[1] <= PLAYER_GROUND_Y:
             self.position[1] = PLAYER_GROUND_Y
             self.velocity[1] = 0.0

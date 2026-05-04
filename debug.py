@@ -1,12 +1,4 @@
-"""Flags de desenvolvimento para alternar comportamentos em tempo de execução.
-
-Para alternar via teclado, adicione ao key_callback em main.py:
-
-    if key == glfw.KEY_T and action == glfw.PRESS:
-        import debug
-        debug.toggle("show_timer_text")
-        debug.toggle("infinite_lives")
-"""
+"""Flags de desenvolvimento para alternar comportamentos em tempo de execução."""
 
 DEBUG: dict = {
     "show_timer_text":     False,  # True = cronômetro MM:SS  |  False = barra de progresso
@@ -16,12 +8,7 @@ DEBUG: dict = {
 
 
 def toggle(key: str) -> bool:
-    """Inverte flag booleana e retorna o novo valor.
-
-    Exemplo:
-        import debug
-        debug.toggle("show_timer_text")   # alterna entre texto e barra a cada pressionamento
-    """
+    """Inverte flag booleana e retorna o novo valor."""
     if key not in DEBUG:
         raise KeyError(f"Flag de debug desconhecida: {key!r}")
     DEBUG[key] = not DEBUG[key]
@@ -29,11 +16,7 @@ def toggle(key: str) -> bool:
 
 
 def set_flag(key: str, value: bool) -> None:
-    """Define flag booleana explicitamente.
-
-    Exemplo:
-        debug.set_flag("show_phase_progress", False)  # oculta a barra sem alternância
-    """
+    """Define flag booleana explicitamente."""
     if key not in DEBUG:
         raise KeyError(f"Flag de debug desconhecida: {key!r}")
     DEBUG[key] = bool(value)

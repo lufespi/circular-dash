@@ -40,7 +40,6 @@ class GameState:
         self._finish_x       = 2.5
         self._finish_active  = False   # True a partir de TOTAL_GAME_TIME
 
-    # ------------------------------------------------------------------ #
 
     def update(self, dt: float):
         if self.state not in ("running", "crossing"):
@@ -136,7 +135,6 @@ class GameState:
                 self.player.on_ground   = False
                 self.player._platform_y = None
 
-    # ------------------------------------------------------------------ #
 
     def render(self):
         phase = self.level.phase
@@ -154,8 +152,6 @@ class GameState:
         self.renderer.draw_player(self.player, phase)
 
         self.hud.render(self.elapsed, self.player.lives, phase, self.state)
-
-    # ------------------------------------------------------------------ #
 
     def on_jump(self):
         if self.state in ("running", "crossing"):

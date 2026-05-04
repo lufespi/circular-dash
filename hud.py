@@ -51,8 +51,6 @@ class HUD:
         self._last_phase     = -1
         self._last_debug_on  = None
 
-    # ------------------------------------------------------------------ #
-
     def _px_to_ndc_x(self, px: float) -> float:
         return (px / WINDOW_WIDTH) * 2.0 - 1.0
 
@@ -65,8 +63,6 @@ class HUD:
     def _ndc_h(self, px_h: float) -> float:
         return (px_h / WINDOW_HEIGHT) * 2.0
 
-    # ------------------------------------------------------------------ #
-
     def _upload(self, img) -> int:
         return self._renderer.upload_text_texture(img)
 
@@ -74,8 +70,6 @@ class HUD:
         if tid:
             self._renderer.delete_texture(tid)
         return 0
-
-    # ------------------------------------------------------------------ #
 
     def render(self, elapsed: float, lives: int, phase: int, state: str):
         """Desenha todos os elementos visuais do HUD no frame atual."""
@@ -92,8 +86,6 @@ class HUD:
             self._draw_game_over()
         elif state == "victory":
             self._draw_victory()
-
-    # ------------------------------------------------------------------ #
 
     def _draw_timer(self, elapsed: float):
         """Atualiza e desenha cronômetro no canto superior esquerdo."""

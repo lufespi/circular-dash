@@ -1,10 +1,4 @@
-"""Ponto de entrada do jogo e loop principal GLFW/OpenGL.
-
-Segue a estrutura vista em aula:
-1) inicializa GLFW e janela
-2) registra callbacks
-3) executa loop principal com update/render por delta time
-"""
+"""Ponto de entrada do jogo e loop principal GLFW/OpenGL."""
 
 import sys
 import time
@@ -40,7 +34,7 @@ def _file_exists(path):
 _PROJECT_ROOT = _script_dir()
 
 
-def _resolved_music_path():
+def _resolved_music_path(): # normaliza o caminho da música de fundo
     if not BG_MUSIC_PATH.strip():
         return None
     rel = BG_MUSIC_PATH.strip()

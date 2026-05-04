@@ -35,34 +35,27 @@ class Renderer:
         self._bg_scroll    = 0.0  # deslocamento UV horizontal
         self._player_textures = []  # sprite do personagem por fase
         self._player_aspect   = []  # altura / largura (para manter proporção em NDC)
-
-        # --- Transição de fase ---
-        # Estado: None | 'fade_out' | 'fade_in'
-        self._trans_state      = None
+        self._trans_state      = None # estado da transição de fase
         self._trans_timer      = 0.0   # tempo decorrido na etapa atual
         self._trans_from_phase = 0     # fase de onde estamos saindo
         self._trans_to_phase   = 0     # fase para onde estamos indo
         self._trans_alpha      = 0.0   # opacidade atual do overlay preto (0..1)
 
     def load_phase_textures(self):
-        """Carrega todas as imagens de fundo. Chame após contexto GL ativo."""
+        """Carrega todas as imagens de fundo da fase. Chame após contexto GL ativo."""
         for path in PHASE_BG_IMAGES:
             self._bg_textures.append(self._load_texture(path))
 
     def load_player_textures(self):
         """Carrega sprites do personagem (PNG com alpha) por fase."""
-        self._player_textures.clear()
-        self._player_aspect.clear()
+        self._player_textures.clear() 
+        self._player_aspect.clear() 
         for path in PHASE_PERSONAGENS:
-            tid, aspect = self._load_sprite_texture(path)
-            self._player_textures.append(tid)
-            self._player_aspect.append(aspect)
+            tid, aspect = self._load_sprite_texture(path) # carrega a textura e o aspecto do personagem
+            self._player_textures.append(tid) 
+            self._player_aspect.append(aspect) 
 
-    # ------------------------------------------------------------------ #
-    #  Textura                                                             #
-    # ------------------------------------------------------------------ #
-
-    def _resolve_texture_path(self, path: str) -> str:
+    def _resolve_texture_path(self, path: str) -> str: # normaliza o caminho da imagem
         normalized = path.replace("\\", "/")
         parts = normalized.rsplit("/", 1)
         if len(parts) == 2:
@@ -72,10 +65,10 @@ class Renderer:
 
         return path
 
-    def _load_texture(self, path: str) -> int:
+    def _load_texture(self, path: str) -> int: 
         candidates = [path]
         resolved = self._resolve_texture_path(path)
-        if resolved != path:
+        if resolved != path: 
             candidates.append(resolved)
 
         try:
@@ -92,19 +85,19 @@ class Renderer:
             if img is None:
                 return 0
 
-            img  = img.transpose(Image.FLIP_TOP_BOTTOM)
+            img  = img.transpose(Image.FLIP_TOP_BOTTOM) # inverte a imagem (opengl usa a direção inversa)
             w, h = img.size
-            arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8))
+            arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8)) # converte a imagem para um array de uint8
 
-            tid = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, tid)
+            tid = glGenTextures(1) # gera um id para a textura
+            glBindTexture(GL_TEXTURE_2D, tid) # vincula a textura ao id
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, arr)
-            glBindTexture(GL_TEXTURE_2D, 0)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) # define o modo de repetição da textura
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR) # define o filtro de minimização da textura
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR) # define o filtro de maximização da textura
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1) # define o alinhamento dos pixels da textura
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, arr) # carrega a textura na memória
+            glBindTexture(GL_TEXTURE_2D, 0) # desvincula a textura
             return tid
         except Exception as e:
             print(f"[Renderer] Falha ao carregar {chosen_path}: {e}")
@@ -133,7 +126,7 @@ class Renderer:
             aspect = float(h) / float(w)
             arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8))
             tid = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, tid)
+            glBindTexture(GL_TEXTURE_2D, tid) 
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
@@ -145,10 +138,6 @@ class Renderer:
         except Exception as e:
             print(f"[Renderer] Falha ao carregar sprite {chosen}: {e}")
             return 0, 1.0
-
-    # ------------------------------------------------------------------ #
-    #  Upload de textura de texto (usado pelo HUD)                        #
-    # ------------------------------------------------------------------ #
 
     def upload_text_texture(self, pil_image) -> int:
         """Recebe PIL Image RGBA, devolve tex_id OpenGL."""
@@ -171,19 +160,11 @@ class Renderer:
         if tid:
             glDeleteTextures(1, np.array([tid], dtype=np.uint32))
 
-    # ------------------------------------------------------------------ #
-    #  Scroll do fundo                                                     #
-    # ------------------------------------------------------------------ #
-
     def update_scroll(self, dt: float, scroll_speed: float):
         """Atualiza deslocamento horizontal UV do fundo em parallax."""
         self._bg_scroll += scroll_speed * BG_SCROLL_PARALLAX * dt
         if self._bg_scroll >= 1.0:
             self._bg_scroll -= 1.0
-
-    # ------------------------------------------------------------------ #
-    #  Transição de fase                                                   #
-    # ------------------------------------------------------------------ #
 
     def start_phase_transition(self, from_phase: int, to_phase: int):
         """Inicia transição de fade entre duas eras. Chame ao detectar mudança de fase."""
@@ -222,10 +203,6 @@ class Renderer:
             return self._trans_to_phase
         return self._trans_from_phase
 
-    # ------------------------------------------------------------------ #
-    #  Fundo                                                               #
-    # ------------------------------------------------------------------ #
-
     def draw_background(self, phase: int):
         """Desenha fundo da fase por textura ou cor sólida se arquivo faltar.
         Durante transição de era, usa a fase correta e aplica overlay preto de fade."""
@@ -248,7 +225,7 @@ class Renderer:
         glBindTexture(GL_TEXTURE_2D, tid)
         glColor4f(1, 1, 1, 1)
         glBegin(GL_QUADS)
-        glTexCoord2f(u0, 0); glVertex2f(-1, -1)
+        glTexCoord2f(u0, 0); glVertex2f(-1, -1) 
         glTexCoord2f(u1, 0); glVertex2f( 1, -1)
         glTexCoord2f(u1, 1); glVertex2f( 1,  1)
         glTexCoord2f(u0, 1); glVertex2f(-1,  1)
@@ -266,10 +243,6 @@ class Renderer:
         glColor3f(*rgb); glVertex2f(-1,  1)
         glEnd()
 
-    # ------------------------------------------------------------------ #
-    #  Chão                                                                #
-    # ------------------------------------------------------------------ #
-
     def draw_ground(self, phase: int):
         """Faixa de chão procedural (alinha física/player); desenha por cima do BG."""
         c = PHASE_COLORS[phase]["ground"]
@@ -280,10 +253,6 @@ class Renderer:
         glVertex2f( 1, GROUND_TOP_Y)
         glVertex2f(-1, GROUND_TOP_Y)
         glEnd()
-
-    # ------------------------------------------------------------------ #
-    #  Player                                                              #
-    # ------------------------------------------------------------------ #
 
     def draw_player(self, player, phase: int):
         """Renderiza o personagem: sprite por fase (PNG) ou círculo se textura faltar."""
@@ -302,14 +271,14 @@ class Renderer:
         half_h = half_w * aspect * PLAYER_SPRITE_HEIGHT_SCALE
 
         if tid:
-            a = 0.45 if player.is_flashing else 1.0
+            a = 0.45 if player.is_flashing else 1.0 # opacidade do sprite (dano do player)
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, tid)
             glColor4f(1.0, 1.0, 1.0, a)
             glBegin(GL_QUADS)
             x0, x1 = cx - half_w, cx + half_w
             y0, y1 = cy - half_h, cy + half_h
-            glTexCoord2f(0, 0); glVertex2f(x0, y0)
+            glTexCoord2f(0, 0); glVertex2f(x0, y0) # desenha o sprite (no retangulo do sprite)
             glTexCoord2f(1, 0); glVertex2f(x1, y0)
             glTexCoord2f(1, 1); glVertex2f(x1, y1)
             glTexCoord2f(0, 1); glVertex2f(x0, y1)
@@ -323,7 +292,7 @@ class Renderer:
         else:
             r, g, b, a = COLOR_PLAYER
 
-        radius = PLAYER_RADIUS
+        radius = PLAYER_RADIUS # desenha o círculo do player caso não tenha sprite
         glColor4f(r, g, b, a)
         glBegin(GL_TRIANGLE_FAN)
         glVertex2f(cx, cy)
@@ -342,11 +311,6 @@ class Renderer:
                        cy + radius * float(np.sin(angle)))
         glEnd()
 
-
-    # ------------------------------------------------------------------ #
-    #  Obstáculo                                                           #
-    # ------------------------------------------------------------------ #
-
     def draw_obstacle(self, obstacle, phase: int):
         """Renderiza obstáculo: espinho (triângulo) ou bloco (quad com detalhes)."""
         if obstacle.kind == 'spike':
@@ -355,7 +319,6 @@ class Renderer:
             self._draw_block(obstacle, phase)
 
     def _draw_spike(self, obstacle, phase: int):
-        """Espinho triangular apontando para cima, com brilho na aresta."""
         c  = PHASE_COLORS[phase]["obstacle"]
         x, y = float(obstacle.position[0]), float(obstacle.position[1])
         w, h = obstacle.width, obstacle.height
@@ -400,12 +363,9 @@ class Renderer:
         glEnd()
 
     def _draw_block(self, obstacle, phase: int):
-        """Bloco sólido estilo Geometry Dash: face, detalhe e borda."""
         c  = PHASE_COLORS[phase]["obstacle"]
         x, y = float(obstacle.position[0]), float(obstacle.position[1])
         w, h = obstacle.width, obstacle.height
-        # Corrige a proporção para que o bloco fique visualmente quadrado na tela.
-        # A física e a colisão continuam usando as dimensões originais do obstáculo.
         w_render = w * (WINDOW_HEIGHT / WINDOW_WIDTH)
         r, g, b = c
 
@@ -418,8 +378,8 @@ class Renderer:
         glVertex2f(x,     y + h)
         glEnd()
 
-        # Detalhe interno (quadrado menor) — imita os blocos do GD
-        m  = min(w_render, h) * 0.18   # margem interna
+        # Detalhe interno (quadrado menor)
+        m  = min(w_render, h) * 0.18   
         ir = min(r * 0.5, 1.0)
         ig = min(g * 0.5, 1.0)
         ib = min(b * 0.5, 1.0)
@@ -431,15 +391,6 @@ class Renderer:
         glVertex2f(x + m,     y + h - m)
         glEnd()
 
-        # Highlight no canto superior-esquerdo (brilho 3D)
-        glColor4f(1.0, 1.0, 1.0, 0.30)
-        glLineWidth(2.0)
-        glBegin(GL_LINES)
-        glVertex2f(x + 0.004, y + h)
-        glVertex2f(x + 0.004, y)
-        glVertex2f(x,         y + h - 0.004)
-        glVertex2f(x + w_render,     y + h - 0.004)
-        glEnd()
 
         # Sombra no canto inferior-direito
         glColor4f(0.0, 0.0, 0.0, 0.35)
@@ -460,13 +411,7 @@ class Renderer:
         glVertex2f(x,     y + h)
         glEnd()
 
-    # ------------------------------------------------------------------ #
-    #  Textura de HUD (texto, ícones)                                     #
-    # ------------------------------------------------------------------ #
-
-    def draw_texture_quad(self, tid: int, x: float, y: float,
-                          w: float, h: float, alpha: float = 1.0):
-        """Desenha quad texturizado em coordenadas NDC."""
+    def draw_texture_quad(self, tid: int, x: float, y: float,w: float, h: float, alpha: float = 1.0):
         glEnable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, tid)
         glColor4f(1, 1, 1, alpha)
@@ -479,20 +424,12 @@ class Renderer:
         glBindTexture(GL_TEXTURE_2D, 0)
         glDisable(GL_TEXTURE_2D)
 
-    # ------------------------------------------------------------------ #
-    #  Overlays                                                            #
-    # ------------------------------------------------------------------ #
-
     def draw_finish_line(self, x: float):
-        """Desenha uma linha de chegada festiva com bandeirola e poste."""
-        import numpy as np
-        from constants import GROUND_TOP_Y, GROUND_BOTTOM_Y
-
         pole_w   = 0.012
-        pole_top = 0.75     # topo do poste em NDC Y
+        pole_top = 0.75     
         pole_bot = GROUND_TOP_Y
 
-        # --- Poste ---
+        # poste
         glColor3f(0.85, 0.85, 0.85)
         glBegin(GL_QUADS)
         glVertex2f(x,          pole_bot)
@@ -501,7 +438,7 @@ class Renderer:
         glVertex2f(x,          pole_top)
         glEnd()
 
-        # --- Bandeirola (triângulo) no topo ---
+        # Bandeirola (triângulo) no topo
         flag_w = 0.14
         flag_h = 0.09
         glColor3f(1.0, 0.85, 0.0)   # amarelo ouro
@@ -510,6 +447,7 @@ class Renderer:
         glVertex2f(x + pole_w + flag_w,  pole_top - flag_h * 0.5)
         glVertex2f(x + pole_w,           pole_top - flag_h)
         glEnd()
+
         # borda da bandeirola
         glColor4f(0.6, 0.4, 0.0, 0.9)
         glLineWidth(1.5)
@@ -537,8 +475,7 @@ class Renderer:
             glVertex2f(cx,         GROUND_TOP_Y)
             glEnd()
 
-        # --- Texto "META" acima da bandeirola ---
-        # (usa linha branca simples como sinalização extra)
+        # Texto "META" acima da bandeirola
         glColor4f(1.0, 1.0, 1.0, 0.55)
         glLineWidth(2.5)
         glBegin(GL_LINES)
